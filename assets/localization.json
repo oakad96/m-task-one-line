@@ -1,0 +1,14 @@
+{
+  "en": {
+    "draw_prompt": "Draw the shape!",
+    "time_remaining": "Time: {0}s",
+    "success": "Great job!",
+    "fail": "Try again!"
+  },
+  "tr": {
+    "draw_prompt": "Şekli çiz!",
+    "time_remaining": "Süre: {0}s",
+    "success": "Harika iş!",
+    "fail": "Tekrar dene!"
+  }
+}

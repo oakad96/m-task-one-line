@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Manual Skeleton Creation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .canvas-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 500px;
+        }
+
+        canvas {
+            border: 1px solid #ccc;
+            margin: 10px 0;
+        }
+
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+
+        button:disabled {
+            background: #ccc;
+        }
+
+        .json-output {
+            margin: 20px auto;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .json-container {
+            position: relative;
+            margin-top: 10px;
+        }
+
+        #jsonOutput {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-y: auto;
+            background: #f5f5f5;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+
+        #copyButton {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #copyButton:hover {
+            background: #0056b3;
+        }
+
+        .mode-indicator {
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .stats {
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .snap-controls {
+                margin-top: 10px;
+            }
+
+        .snap-controls label {
+                margin: 0 10px;
+                user-select: none;
+        }
+
+        .snap-controls input[type="checkbox"] {
+                margin-right: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Manual Skeleton Creation</h1>
+
+        <div class="controls">
+            <input type="file" id="fileInput" accept="image/*">
+            <button id="addNodeBtn">Add Nodes</button>
+            <button id="connectNodesBtn">Connect Nodes</button>
+            <button id="deleteBtn">Delete</button>
+            <button id="clearBtn">Clear All</button>
+            <div class="snap-controls">
+                <label><input type="checkbox" id="horizontalSnap" checked> Horizontal Snap</label>
+                <label><input type="checkbox" id="verticalSnap" checked> Vertical Snap</label>
+            </div>
+        </div>
+
+        
+        </div>
+
+        <div class="mode-indicator" id="modeIndicator">
+            Mode: Add Nodes - Click anywhere to add nodes
+        </div>
+
+        <div class="canvas-container">
+            <div class="canvas-wrapper">
+                <canvas id="canvas" width="500" height="400"></canvas>
+            </div>
+        </div>
+
+        <div class="stats">
+            <span>Total Nodes: <span id="nodeCount">0</span></span>
+            <span style="margin-left: 15px;">Endpoints: <span id="endpointCount">0</span></span>
+            <span style="margin-left: 15px;">Junctions: <span id="junctionCount">0</span></span>
+        </div>
+
+        <div class="json-output">
+            <h3>Skeleton Data (JSON)</h3>
+            <div class="json-container">
+                <textarea id="jsonOutput" readonly></textarea>
+                <button id="copyButton">Copy JSON</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const fileInput = document.getElementById('fileInput');
+        const addNodeBtn = document.getElementById('addNodeBtn');
+        const connectNodesBtn = document.getElementById('connectNodesBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const modeIndicator = document.getElementById('modeIndicator');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const copyButton = document.getElementById('copyButton');
+        const nodeCount = document.getElementById('nodeCount');
+        const endpointCount = document.getElementById('endpointCount');
+        const junctionCount = document.getElementById('junctionCount');
+
+        let mode = 'add'; // 'add', 'connect', 'delete'
+        let nodes = [];
+        let connections = [];
+        let selectedNode = null;
+        let backgroundImage = null;
+        const NODE_RADIUS = 4;
+
+        // Mode switching
+        addNodeBtn.addEventListener('click', () => {
+            mode = 'add';
+            selectedNode = null;
+            modeIndicator.textContent = 'Mode: Add Nodes - Click anywhere to add nodes';
+            updateCanvas();
+        });
+
+        connectNodesBtn.addEventListener('click', () => {
+            mode = 'connect';
+            selectedNode = null;
+            modeIndicator.textContent = 'Mode: Connect Nodes - Click two nodes to connect them';
+            updateCanvas();
+        });
+
+        deleteBtn.addEventListener('click', () => {
+            mode = 'delete';
+            selectedNode = null;
+            modeIndicator.textContent = 'Mode: Delete - Click nodes or connections to delete them';
+            updateCanvas();
+        });
+
+        clearBtn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to clear all nodes and connections?')) {
+                nodes = [];
+                connections = [];
+                selectedNode = null;
+                updateCanvas();
+                updateStats();
+                updateJSON();
+            }
+        });
+
+        // File input handling
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                backgroundImage = new Image();
+                backgroundImage.onload = function () {
+                    // Resize canvas to match image aspect ratio
+                    const scale = Math.min(500 / backgroundImage.width, 400 / backgroundImage.height);
+                    canvas.width = backgroundImage.width * scale;
+                    canvas.height = backgroundImage.height * scale;
+                    updateCanvas();
+                }
+                backgroundImage.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Canvas interaction
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            switch (mode) {
+                case 'add':
+                    addNode(x, y);
+                    break;
+                case 'connect':
+                    handleConnect(x, y);
+                    break;
+                case 'delete':
+                    handleDelete(x, y);
+                    break;
+            }
+        });
+
+        // Add after the other constant declarations
+        const horizontalSnap = document.getElementById('horizontalSnap');
+        const verticalSnap = document.getElementById('verticalSnap');
+
+        function snapToNearestNode(x, y) {
+            const SNAP_THRESHOLD = 0.015; // 1.5% of canvas size
+            const snapThresholdX = canvas.width * SNAP_THRESHOLD;
+            const snapThresholdY = canvas.height * SNAP_THRESHOLD;
+
+            let bestX = x;
+            let bestY = y;
+            let foundSnap = false;
+
+            // Check for snapping to existing nodes
+            for (const node of nodes) {
+                // Check horizontal alignment if enabled
+                if (horizontalSnap.checked && Math.abs(y - node.y) < snapThresholdY) {
+                    bestY = node.y;
+                    foundSnap = true;
+                }
+                // Check vertical alignment if enabled
+                if (verticalSnap.checked && Math.abs(x - node.x) < snapThresholdX) {
+                    bestX = node.x;
+                    foundSnap = true;
+                }
+            }
+
+            return { x: bestX, y: bestY, snapped: foundSnap };
+        }
+
+        function addNode(x, y) {
+            const snappedPos = snapToNearestNode(x, y);
+            nodes.push({ x: snappedPos.x, y: snappedPos.y });
+            updateCanvas();
+            updateStats();
+            updateJSON();
+        }
+
+        function handleConnect(x, y) {
+            const clickedNode = findNodeNear(x, y);
+            if (clickedNode !== null) {
+                if (selectedNode === null) {
+                    selectedNode = clickedNode;
+                } else if (selectedNode !== clickedNode) {
+                    // Add connection if it doesn't already exist
+                    const exists = connections.some(conn =>
+                        (conn[0] === selectedNode && conn[1] === clickedNode) ||
+                        (conn[0] === clickedNode && conn[1] === selectedNode)
+                    );
+                    if (!exists) {
+                        connections.push([selectedNode, clickedNode]);
+                        updateStats();
+                        updateJSON();
+                    }
+                    selectedNode = null;
+                }
+                updateCanvas();
+            }
+        }
+
+        function handleDelete(x, y) {
+            // Try to delete node first
+            const nodeIndex = findNodeNear(x, y);
+            if (nodeIndex !== null) {
+                // Remove node and all its connections
+                nodes.splice(nodeIndex, 1);
+                connections = connections.filter(conn =>
+                    conn[0] !== nodeIndex && conn[1] !== nodeIndex
+                );
+                // Update remaining connection indices
+                connections = connections.map(conn => [
+                    conn[0] > nodeIndex ? conn[0] - 1 : conn[0],
+                    conn[1] > nodeIndex ? conn[1] - 1 : conn[1]
+                ]);
+            } else {
+                // Try to delete connection
+                const clickedConn = findConnectionNear(x, y);
+                if (clickedConn !== null) {
+                    connections.splice(clickedConn, 1);
+                }
+            }
+            updateCanvas();
+            updateStats();
+            updateJSON();
+        }
+
+        function findNodeNear(x, y) {
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                const dist = Math.hypot(node.x - x, node.y - y);
+                if (dist <= NODE_RADIUS * 2) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
+        function findConnectionNear(x, y) {
+            const CLICK_THRESHOLD = 5;
+            for (let i = 0; i < connections.length; i++) {
+                const [from, to] = connections[i];
+                const fromNode = nodes[from];
+                const toNode = nodes[to];
+
+                // Calculate distance from point to line segment
+                const A = x - fromNode.x;
+                const B = y - fromNode.y;
+                const C = toNode.x - fromNode.x;
+                const D = toNode.y - fromNode.y;
+
+                const dot = A * C + B * D;
+                const len_sq = C * C + D * D;
+                let param = -1;
+
+                if (len_sq !== 0) param = dot / len_sq;
+
+                let xx, yy;
+
+                if (param < 0) {
+                    xx = fromNode.x;
+                    yy = fromNode.y;
+                } else if (param > 1) {
+                    xx = toNode.x;
+                    yy = toNode.y;
+                } else {
+                    xx = fromNode.x + param * C;
+                    yy = fromNode.y + param * D;
+                }
+
+                const dist = Math.hypot(x - xx, y - yy);
+                if (dist <= CLICK_THRESHOLD) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
+        function updateCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background image if exists
+            if (backgroundImage) {
+                ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+            }
+
+            // Draw snap guides if in add mode
+            if (mode === 'add') {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = lastMouseX - rect.left;
+                const mouseY = lastMouseY - rect.top;
+                const snappedPos = snapToNearestNode(mouseX, mouseY);
+
+                if (snappedPos.snapped) {
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.setLineDash([5, 5]);
+                    ctx.lineWidth = 1;
+
+                    // Draw vertical guide if vertical snap is enabled
+                    if (verticalSnap.checked && mouseX !== snappedPos.x) {
+                        ctx.beginPath();
+                        ctx.moveTo(snappedPos.x, 0);
+                        ctx.lineTo(snappedPos.x, canvas.height);
+                        ctx.stroke();
+                    }
+
+                    // Draw horizontal guide if horizontal snap is enabled
+                    if (horizontalSnap.checked && mouseY !== snappedPos.y) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, snappedPos.y);
+                        ctx.lineTo(canvas.width, snappedPos.y);
+                        ctx.stroke();
+                    }
+
+                    ctx.setLineDash([]);
+                }
+            }
+
+            // Draw connections
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            connections.forEach(([fromIdx, toIdx]) => {
+                const from = nodes[fromIdx];
+                const to = nodes[toIdx];
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.stroke();
+            });
+
+            // Draw nodes
+            nodes.forEach((node, index) => {
+                ctx.beginPath();
+                // Color based on number of connections
+                const nodeConnections = connections.filter(conn =>
+                    conn[0] === index || conn[1] === index
+                );
+                ctx.fillStyle = nodeConnections.length === 1 ? '#00ff00' :
+                    nodeConnections.length > 2 ? '#ff0000' : '#0000ff';
+
+                // Highlight selected node
+                if (index === selectedNode) {
+                    ctx.arc(node.x, node.y, NODE_RADIUS * 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffff00';
+                } else {
+                    ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
+                }
+                ctx.fill();
+
+                // Draw node ID
+                ctx.fillStyle = '#000';
+                ctx.font = '10px Arial';
+                ctx.fillText(index.toString(), node.x + 6, node.y - 6);
+            });
+        }
+
+        function updateStats() {
+            nodeCount.textContent = nodes.length;
+
+            let endpoints = 0;
+            let junctions = 0;
+
+            nodes.forEach((_, index) => {
+                const connectionCount = connections.filter(conn =>
+                    conn[0] === index || conn[1] === index
+                ).length;
+
+                if (connectionCount === 1) endpoints++;
+                else if (connectionCount > 2) junctions++;
+            });
+
+            endpointCount.textContent = endpoints;
+            junctionCount.textContent = junctions;
+        }
+
+        function updateJSON() {
+            // Create adjacency list
+            const adjacency = Array(nodes.length).fill(null).map(() => []);
+            connections.forEach(([from, to]) => {
+                adjacency[from].push(to);
+                adjacency[to].push(from);
+            });
+
+            // Sort connections for consistency
+            adjacency.forEach(list => {
+                list.sort((a, b) => a - b);
+            });
+
+            const skeletonData = {
+                nodes: nodes.map(({ x, y }) => ({ x, y })),
+                adjacency: adjacency
+            };
+
+            jsonOutput.value = JSON.stringify(skeletonData, null, 2);
+        }
+
+        // Copy button functionality
+        copyButton.addEventListener('click', () => {
+            jsonOutput.select();
+            document.execCommand('copy');
+            const originalText = copyButton.textContent;
+            copyButton.textContent = 'Copied!';
+            setTimeout(() => {
+                copyButton.textContent = originalText;
+            }, 2000);
+        });
+
+        // Add mouse move tracking for snap guides
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        canvas.addEventListener('mousemove', (e) => {
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            if (mode === 'add') {
+                updateCanvas();
+            }
+        });
+
+        // Initialize canvas
+        updateCanvas();
+    </script>
+</body>
+
+</html>
